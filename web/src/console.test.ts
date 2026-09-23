@@ -21,6 +21,7 @@ const stats = (at: string, captured: number, delivered: number, lag = [12, 340])
                 confirmedFlushLsn: "0/3000000",
                 slotActive: true,
                 standbys: [{ host: "pg-b:5432", synced: true, confirmedFlushLsn: "0/3000000" }],
+                captureIsSynchronous: false,
                 changes: captured,
                 transactions: captured,
                 resent: 0,

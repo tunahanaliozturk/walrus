@@ -29,6 +29,7 @@ export const Source = z.object({
     confirmedFlushLsn: z.string().nullable(),
     slotActive: z.boolean(),
     standbys: z.array(Standby),
+    captureIsSynchronous: z.boolean(),
     changes: count,
     transactions: count,
     resent: count,

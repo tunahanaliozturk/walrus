@@ -12,7 +12,12 @@ alter system set wal_level = 'logical';
 alter system set wal_keep_size = '1GB';
 
 -- Commits wait for the standby, so a commit the application saw succeed is on both nodes and survives the
--- primary dying. Set here rather than on the command line because the first-start server that runs these init
--- scripts uses the command-line settings, and with no standby yet every commit above would wait forever. It
--- takes effect from the next start, which is the real one.
-alter system set synchronous_standby_names = '*';
+-- primary dying. The standbys are named, never '*': a logical replication connection is a standby too, and with
+-- '*' Walrus's own connection becomes the synchronous one. Every commit then waits for Walrus to store it, and the
+-- physical standby, the node that has to survive a failover, is only a potential one. FIRST 1 over both names
+-- works on either node: a node is never its own standby, so the other one is always the one that counts.
+--
+-- Set here rather than on the command line because the first-start server that runs these init scripts uses the
+-- command-line settings, and with no standby yet every commit above would wait forever. It takes effect from the
+-- next start, which is the real one.
+alter system set synchronous_standby_names = 'FIRST 1 (pg_a, pg_b)';

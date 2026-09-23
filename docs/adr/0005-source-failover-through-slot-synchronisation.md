@@ -21,9 +21,15 @@ twice. Three things can go wrong:
   standby keeps a copy of the slot, and a promotion finds it there. That answers 1.
 - **`synchronized_standby_slots`** on the primary names the standby's physical slot, so the primary does not send
   a decoded transaction to capture until the standby has received it. That answers 2.
-- **Synchronous commit** (`synchronous_standby_names = '*'`), so a commit the application saw succeed is on the
-  standby. That answers 3, at the cost of a round trip per commit and of commits waiting while no standby is
-  connected.
+- **Synchronous commit to the physical standby, named** (`synchronous_standby_names = 'FIRST 1 (pg_a, pg_b)'`),
+  so a commit the application saw succeed is on the standby. That answers 3, at the cost of a round trip per commit
+  and of commits waiting while no standby is connected. Never `'*'`: a logical replication connection is a standby
+  too, matched by its application name, and with `'*'` capture's own connection becomes the synchronous one. Every
+  commit then waits for Walrus to store it, and the physical standby is only a potential one, so the guarantee this
+  setting was meant to buy is gone. The first version of the compose file did exactly that, and nothing failed: the
+  standby happened to keep up in every test. It was found by reading `pg_stat_replication` while writing up the
+  failover numbers. Walrus now reads the setting on every source and warns, in its log and on the console, when it
+  would match capture, and CI checks which connection is synchronous.
 - **A refusal to guess.** Before resuming, capture compares the primary's current log position with its checkpoint.
   If the outbox holds positions the source has never written, capture stops with an error that points at the
   runbook, instead of resuming and skipping. With the settings above this cannot happen; the check turns a

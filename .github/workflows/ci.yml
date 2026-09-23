@@ -181,6 +181,15 @@ jobs:
           done
           echo "$out"; exit 1
 
+      # A logical replication connection is a standby too. The physical standby must be the synchronous one, or
+      # every commit waits for Walrus and a failover can lose an acknowledged write.
+      - name: The standby is synchronous and capture is not
+        run: |
+          out=$(docker compose exec -T pg-a psql -U postgres -Atc "select application_name || ':' || sync_state from pg_stat_replication order by 1")
+          echo "$out"
+          echo "$out" | grep -qx "pg_b:sync"
+          echo "$out" | grep -qx "walrus-eu:async"
+
       - name: Commit-to-apply lag at 3,000 changes a second for a minute
         run: dotnet run -c Release --project load/Walrus.Load -- soak --rate 3000 --seconds 60
 

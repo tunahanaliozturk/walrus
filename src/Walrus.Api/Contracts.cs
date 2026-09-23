@@ -85,6 +85,10 @@ public sealed record StandbyResponse(string Host, bool Synced, string? Confirmed
 /// <param name="ConfirmedFlushLsn">The slot's acknowledged position.</param>
 /// <param name="SlotActive">Whether a session is attached.</param>
 /// <param name="Standbys">Each standby's copy of the slot.</param>
+/// <param name="CaptureIsSynchronous">
+/// Whether the source makes every commit wait for Walrus, because its synchronous standby setting matches capture's
+/// connection. Almost always a misconfiguration.
+/// </param>
 /// <param name="Changes">Row changes captured since the service started.</param>
 /// <param name="Transactions">Transactions captured, heartbeats included.</param>
 /// <param name="Resent">Transactions the source sent again after a restart, recognised and skipped.</param>
@@ -99,6 +103,7 @@ public sealed record SourceResponse(
     string? ConfirmedFlushLsn,
     bool SlotActive,
     IReadOnlyList<StandbyResponse> Standbys,
+    bool CaptureIsSynchronous,
     long Changes,
     long Transactions,
     long Resent,

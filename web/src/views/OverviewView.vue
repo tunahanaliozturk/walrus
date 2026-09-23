@@ -72,6 +72,16 @@ const summary = computed(() => {
                                 >Not ready: a standby has no synchronised slot</span
                             >
                         </dd>
+                        <template v-if="source.captureIsSynchronous">
+                            <dt>Commits</dt>
+                            <dd>
+                                <span class="badge badge--danger"
+                                    >Every commit waits for Walrus</span
+                                >
+                                The source counts capture as a synchronous standby. Name the
+                                physical standbys in synchronous_standby_names instead of *.
+                            </dd>
+                        </template>
                         <template v-if="source.lastError">
                             <dt>Last error</dt>
                             <dd class="state--error">{{ source.lastError }}</dd>

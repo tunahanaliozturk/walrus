@@ -14,7 +14,9 @@
 
 For failover, additionally on every node: `hot_standby_feedback = on`, `sync_replication_slots = on`, a `dbname`
 in `primary_conninfo`, `primary_slot_name` set, `synchronized_standby_slots` naming the standby's physical slot,
-and `synchronous_standby_names` if acknowledged commits must survive a crash. `compose.yaml` and
+and `synchronous_standby_names` naming the physical standbys if acknowledged commits must survive a crash. Never
+`'*'`: it matches capture's logical connection too, which then becomes the synchronous standby, so every commit waits
+for Walrus and the physical standby is only a potential one. `compose.yaml` and
 `docker/source/` are a working example.
 
 ## Configuration
@@ -62,12 +64,20 @@ bytes, duplicate source names, short tokens.
 | Sink state | `state` | `Retrying` for more than a minute | The sink is failing for a reason that may pass; `counters.lastError` says which |
 | Dead letters | `walrus.dispatch.dead_letters`, `blockedRows` | any | A row is held until someone fixes the sink and retries |
 | Resent transactions | `resent`, `walrus.capture.resent` | a steady rise | Normal after a restart or failover. Continuous resends mean acknowledgements are not reaching the source |
+| Commits waiting for Walrus | `captureIsSynchronous`, console "Every commit waits for Walrus", a warning in the log | true | The source's synchronous standby setting matches capture. Fix it before anything else: see the runbook |
 
 Metrics are on the `Walrus` meter: `walrus.capture.changes`, `walrus.capture.transactions`, `walrus.capture.resent`,
 `walrus.dispatch.applied` (by sink and outcome), `walrus.dispatch.lag`, `walrus.dispatch.dead_letters`,
 `walrus.dispatch.retries`, `walrus.dispatch.conflicts` (by sink and winning source).
 
 ## Runbooks
+
+### The console says every commit waits for Walrus
+
+The source's `synchronous_standby_names` is `'*'` or names `walrus-<source>`, so the source counts capture as a
+synchronous standby. Every commit on the source now waits until Walrus has stored it, and if capture stops, commits
+stop. Worse, the physical standby is only a potential standby, so a failover can lose commits the application saw
+succeed. Name the physical standbys instead, for example `FIRST 1 (pg_a, pg_b)`, and reload. Walrus needs no change.
 
 ### The primary failed
 

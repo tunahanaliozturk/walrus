@@ -126,6 +126,7 @@ internal static class Endpoints
                 slot?.ConfirmedFlushLsn,
                 slot?.SlotActive ?? false,
                 [.. (slot?.Standbys ?? []).Select(static standby => new StandbyResponse(standby.Host, standby.Synced, standby.ConfirmedFlushLsn))],
+                slot?.CaptureIsSynchronous ?? false,
                 captured.Changes,
                 captured.Transactions,
                 captured.Resent,

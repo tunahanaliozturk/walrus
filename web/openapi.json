@@ -820,6 +820,7 @@
           "confirmedFlushLsn",
           "slotActive",
           "standbys",
+          "captureIsSynchronous",
           "changes",
           "transactions",
           "resent",
@@ -867,6 +868,9 @@
             "items": {
               "$ref": "#/components/schemas/StandbyResponse"
             }
+          },
+          "captureIsSynchronous": {
+            "type": "boolean"
           },
           "changes": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",

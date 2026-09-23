@@ -609,6 +609,7 @@ export interface components {
             confirmedFlushLsn: null | string;
             slotActive: boolean;
             standbys: components["schemas"]["StandbyResponse"][];
+            captureIsSynchronous: boolean;
             /** Format: int64 */
             changes: number | string;
             /** Format: int64 */
