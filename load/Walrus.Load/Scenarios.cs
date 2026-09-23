@@ -93,6 +93,9 @@ internal static class Scenarios
 
             outages.Add((writesBack, captureBack));
             Console.WriteLine($"  cycle {cycle,3}: {primary} -> {standby}, writes back after {writesBack:N1} s, capture after {captureBack:N1} s");
+
+            // Some steady writing between failovers, so every cycle kills a primary that is busy.
+            await Task.Delay(TimeSpan.FromSeconds(stack.Option("settle", 5)));
         }
 
         await stop.CancelAsync();
@@ -304,19 +307,34 @@ internal static class Scenarios
         return lost;
     }
 
+    /// <summary>
+    /// Which node is primary. A node that was just killed is still rewinding and not accepting connections, so
+    /// a failed question is a "not yet", asked again until one node answers as primary.
+    /// </summary>
     private static async Task<(string Primary, string Standby)> RolesAsync(Stack stack, string project)
     {
-        foreach ((string node, string peer) in (ValueTuple<string, string>[])[("pg-a", "pg-b"), ("pg-b", "pg-a")])
+        var elapsed = Stopwatch.StartNew();
+
+        while (true)
         {
-            string recovering = await Stack.DockerAsync("exec", Container(project, node), "psql", "-U", "postgres", "-d", "postgres", "-Atc", "select pg_is_in_recovery()");
-
-            if (recovering == "f")
+            foreach ((string node, string peer) in (ValueTuple<string, string>[])[("pg-a", "pg-b"), ("pg-b", "pg-a")])
             {
-                return (node, peer);
+                try
+                {
+                    if (await Stack.DockerAsync("exec", Container(project, node), "psql", "-U", "postgres", "-d", "postgres", "-Atc", "select pg_is_in_recovery()") == "f")
+                    {
+                        return (node, peer);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // Not accepting connections yet.
+                }
             }
-        }
 
-        throw new InvalidOperationException("Neither eu node is a primary.");
+            Stack.Ensure(elapsed, TimeSpan.FromMinutes(3), "an eu node to answer as primary");
+            await Task.Delay(500);
+        }
     }
 
     /// <summary>

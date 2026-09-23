@@ -9,7 +9,8 @@ test("the overview shows both sources capturing and the sinks caught up", async 
 
     await expect(page.getByRole("heading", { level: 3, name: /eu/ })).toBeVisible();
     await expect(page.getByRole("heading", { level: 3, name: /us/ })).toBeVisible();
-    await expect(page.getByText("Ready: slot synchronised to pg-b:5432")).toBeVisible();
+    // Whichever node is the standby now: an odd number of failovers earlier in the run leaves it on pg-a.
+    await expect(page.getByText(/Ready: slot synchronised to pg-[ab]:5432/)).toBeVisible();
 
     const sinks = page.getByRole("table");
     await expect(sinks.getByRole("rowheader", { name: "replica" })).toBeVisible();

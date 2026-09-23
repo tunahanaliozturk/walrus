@@ -36,7 +36,9 @@ internal sealed class Stack : IAsyncDisposable
         // Both eu nodes, and only ever the primary: after a failover Npgsql finds the other one by itself.
         Eu = NpgsqlDataSource.Create(
             $"Host={Option("eu", "127.0.0.1:5433,127.0.0.1:5434")};Database=shop;Username=postgres;Password={Password};" +
-            "Target Session Attributes=primary;Maximum Pool Size=64;Timeout=5;Command Timeout=60");
+            // Npgsql remembers which host was a standby for Host Recheck Seconds, ten by default. Left there, the
+            // measured write outage after a failover would mostly be that cache.
+            "Target Session Attributes=primary;Host Recheck Seconds=1;Maximum Pool Size=64;Timeout=5;Command Timeout=60");
 
         Us = NpgsqlDataSource.Create($"Host={Option("us", "127.0.0.1:5435")};Database=shop;Username=postgres;Password={Password};Maximum Pool Size=64");
         Sink = NpgsqlDataSource.Create($"Host={Option("store", "127.0.0.1:5436")};Database=sink;Username=postgres;Password={Password};Command Timeout=300");
