@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Walrus.Domain\Walrus.Domain.csproj" />
+  </ItemGroup>
+
+  <!--
+    Logging abstractions are the one package allowed here. The capture and dispatch loops are the use cases,
+    and a use case that fails in production without saying why is not finished. Everything concrete stays in
+    Infrastructure, which ArchitectureTests checks.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Walrus.UnitTests" />
+  </ItemGroup>
+
+</Project>
