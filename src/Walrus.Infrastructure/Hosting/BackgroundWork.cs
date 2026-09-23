@@ -43,7 +43,9 @@ internal sealed partial class CaptureService(
     TimeProvider time,
     ILoggerFactory loggers) : BackgroundService
 {
-    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(30);
+    // Short on purpose. A failover makes a few attempts fail in a row while the standby is promoted, and every
+    // second of backoff after the new primary is ready is a second of lag added for nothing.
+    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan Healthy = TimeSpan.FromMinutes(1);
 
     private readonly ILogger _logger = loggers.CreateLogger<CaptureService>();

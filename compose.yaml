@@ -1,0 +1,167 @@
+# The whole topology on one machine: a source that can fail over, a second source for conflicts, the store and
+# a sink, Walrus, and the console.
+#
+#   eu     pg-a + pg-b   primary and standby, synchronous commit, the capture slot synchronised to the standby
+#   us     pg-c          one node, a second region writing the same tables
+#   store  store         the Walrus store, and the sink database it replicates into
+#
+# Passwords, keys and tokens here are for this file on localhost and nothing else.
+
+x-source-healthcheck: &source-healthcheck
+  test: ["CMD", "pg_isready", "-U", "postgres", "-d", "shop", "-h", "127.0.0.1"]
+  interval: 2s
+  timeout: 3s
+  retries: 60
+
+services:
+  # Both eu nodes run the same settings, and the role comes from whether standby.signal exists, which the entry
+  # point decides at every start. primary_conninfo and primary_slot_name only matter while a node is the
+  # standby, and synchronized_standby_slots only while it is the primary. The dbname in primary_conninfo is
+  # what lets the standby synchronise logical slots.
+  pg-a:
+    image: postgres:18-alpine
+    entrypoint: ["bash", "/usr/local/bin/node-entrypoint.sh"]
+    environment:
+      POSTGRES_PASSWORD: postgres-password-for-local-use-only
+      POSTGRES_DB: shop
+      NODE: pg_a
+      PEER: pg-b
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=20
+      - -c
+      - max_replication_slots=20
+      - -c
+      - hot_standby_feedback=on
+      - -c
+      - sync_replication_slots=on
+      - -c
+      - wal_log_hints=on
+      - -c
+      - primary_slot_name=pg_a
+      - -c
+      - primary_conninfo=host=pg-b port=5432 user=replicator password=replicator-password-for-local-use-only dbname=shop application_name=pg_a
+      - -c
+      - synchronized_standby_slots=pg_b
+    ports: ["5433:5432"]
+    volumes:
+      - ./docker/source/node-entrypoint.sh:/usr/local/bin/node-entrypoint.sh:ro
+      - ./docker/source/init:/docker-entrypoint-initdb.d:ro
+      - pg-a:/var/lib/postgresql
+    healthcheck: *source-healthcheck
+
+  pg-b:
+    image: postgres:18-alpine
+    entrypoint: ["bash", "/usr/local/bin/node-entrypoint.sh"]
+    environment:
+      POSTGRES_PASSWORD: postgres-password-for-local-use-only
+      POSTGRES_DB: shop
+      NODE: pg_b
+      PEER: pg-a
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=20
+      - -c
+      - max_replication_slots=20
+      - -c
+      - hot_standby_feedback=on
+      - -c
+      - sync_replication_slots=on
+      - -c
+      - wal_log_hints=on
+      - -c
+      - primary_slot_name=pg_b
+      - -c
+      - primary_conninfo=host=pg-a port=5432 user=replicator password=replicator-password-for-local-use-only dbname=shop application_name=pg_b
+      - -c
+      - synchronized_standby_slots=pg_a
+    ports: ["5434:5432"]
+    volumes:
+      - ./docker/source/node-entrypoint.sh:/usr/local/bin/node-entrypoint.sh:ro
+      - ./docker/source/init:/docker-entrypoint-initdb.d:ro
+      - pg-b:/var/lib/postgresql
+    healthcheck: *source-healthcheck
+    depends_on:
+      pg-a:
+        condition: service_healthy
+
+  pg-c:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres-password-for-local-use-only
+      POSTGRES_DB: shop
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
+    ports: ["5435:5432"]
+    volumes:
+      # The same schema as eu, without the synchronous-commit setting: there is no standby here to wait for.
+      - ./docker/source/init/00-hba.sh:/docker-entrypoint-initdb.d/00-hba.sh:ro
+      - ./docker/source/init/01-shop.sql:/docker-entrypoint-initdb.d/01-shop.sql:ro
+      - pg-c:/var/lib/postgresql
+    healthcheck: *source-healthcheck
+
+  store:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres-password-for-local-use-only
+    ports: ["5436:5432"]
+    volumes:
+      - ./docker/store/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - store:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "sink", "-h", "127.0.0.1"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  walrus:
+    build:
+      context: .
+    environment:
+      Walrus__StoreConnection: Host=store;Database=walrus;Username=postgres;Password=postgres-password-for-local-use-only
+      Walrus__SinkConnections__replica: Host=store;Database=sink;Username=postgres;Password=postgres-password-for-local-use-only
+      Walrus__MaskingKey: bG9jYWwtbWFza2luZy1rZXktZm9yLWNvbXBvc2Utb25seSEhIQ==
+      Walrus__WebhookSigningKey: bG9jYWwtd2ViaG9vay1rZXktZm9yLWNvbXBvc2Utb25seSEhIQ==
+      Walrus__ReadToken: walrus-read-token-for-local-use-only
+      Walrus__OperatorToken: walrus-operator-token-for-local-use-only
+      Walrus__Sources__0__Name: eu
+      Walrus__Sources__0__Hosts__0: pg-a:5432
+      Walrus__Sources__0__Hosts__1: pg-b:5432
+      Walrus__Sources__0__Database: shop
+      Walrus__Sources__0__Username: walrus_capture
+      Walrus__Sources__0__Password: capture-password-for-local-use-only
+      Walrus__Sources__0__Tables__public.profiles__Conflict: MergeColumns
+      Walrus__Sources__0__Tables__public.accounts__Masks__email: Hash
+      Walrus__Sources__1__Name: us
+      Walrus__Sources__1__Hosts__0: pg-c:5432
+      Walrus__Sources__1__Database: shop
+      Walrus__Sources__1__Username: walrus_capture
+      Walrus__Sources__1__Password: capture-password-for-local-use-only
+      Walrus__Sources__1__Tables__public.profiles__Conflict: MergeColumns
+      Walrus__Sources__1__Tables__public.accounts__Masks__email: Hash
+    ports: ["5190:8080"]
+    healthcheck:
+      test: ["CMD", "healthcheck", "/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      pg-a:
+        condition: service_healthy
+      pg-b:
+        condition: service_healthy
+      pg-c:
+        condition: service_healthy
+      store:
+        condition: service_healthy
+
+volumes:
+  pg-a:
+  pg-b:
+  pg-c:
+  store:
