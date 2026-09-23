@@ -1,0 +1,49 @@
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    include /etc/nginx/mime.types;
+
+    # The console is a read-only window. nginx holds the read token and adds it here, so no token is ever in the
+    # bundle or the browser, and only the read endpoints the console uses are reachable through it. Registering,
+    # replaying, snapshotting and retrying are not, whatever the browser sends.
+    location ~ ^/v1/(stats|conflicts|sinks|sinks/[a-z0-9-]+|sinks/[a-z0-9-]+/(dead-letters|search))$ {
+        include /etc/nginx/security-headers.conf;
+        limit_except GET { deny all; }
+        proxy_pass http://walrus:8080;
+        proxy_set_header Authorization "Bearer ${WALRUS_READ_TOKEN}";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    # The live feed is a long-lived response. Buffering would hold events back until a buffer filled.
+    location = /v1/events {
+        include /etc/nginx/security-headers.conf;
+        limit_except GET { deny all; }
+        proxy_pass http://walrus:8080;
+        proxy_set_header Authorization "Bearer ${WALRUS_READ_TOKEN}";
+        proxy_set_header Connection "";
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+    }
+
+    location /v1/ {
+        return 404;
+    }
+
+    # Hashed assets never change under the same name.
+    location /assets/ {
+        include /etc/nginx/security-headers.conf;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # A single page application: any address the router owns arrives as the index.
+    location / {
+        include /etc/nginx/security-headers.conf;
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}

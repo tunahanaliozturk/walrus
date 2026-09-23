@@ -160,6 +160,17 @@ services:
       store:
         condition: service_healthy
 
+  # The console, through nginx, which holds the read token and forwards only the read endpoints.
+  web:
+    build:
+      context: ./web
+    environment:
+      WALRUS_READ_TOKEN: walrus-read-token-for-local-use-only
+    ports: ["5191:8080"]
+    depends_on:
+      walrus:
+        condition: service_healthy
+
 volumes:
   pg-a:
   pg-b:
