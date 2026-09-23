@@ -44,9 +44,11 @@ internal sealed partial class CaptureService(
     ILoggerFactory loggers) : BackgroundService
 {
     // Short on purpose. A failover makes a few attempts fail in a row while the standby is promoted, and every
-    // second of backoff after the new primary is ready is a second of lag added for nothing.
-    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(5);
+    // second of backoff after the new primary is ready is a second of lag added for nothing. One connection attempt
+    // a second to a source that is down for longer costs nothing worth saving.
+    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Healthy = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(1);
 
     private readonly ILogger _logger = loggers.CreateLogger<CaptureService>();
 
@@ -57,6 +59,7 @@ internal sealed partial class CaptureService(
     private async Task CaptureAsync(string source, CancellationToken stoppingToken)
     {
         var captureOptions = new CaptureOptions(options.Value.Capture.MaxBatchChanges, options.Value.Capture.PendingTransactions);
+        SourceOptions configured = options.Value.Sources.First(candidate => string.Equals(candidate.Name, source, StringComparison.Ordinal));
         SourceCounters status = counters.Source(source);
         TimeSpan delay = TimeSpan.FromMilliseconds(250);
 
@@ -66,15 +69,19 @@ internal sealed partial class CaptureService(
                 source, store, logs, sources.Stamper(source), signal, observer, captureOptions,
                 loggers.CreateLogger<CaptureSession>());
 
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            Task watching = WatchForPromotionAsync(configured, status, stop);
             DateTimeOffset started = time.GetUtcNow();
+            bool superseded = false;
 
             try
             {
-                if (!await session.RunAsync(stoppingToken))
+                if (!await session.RunAsync(stop.Token))
                 {
                     status.LastError = "Another instance holds the capture lease; waiting as a standby.";
-                    delay = TimeSpan.FromSeconds(5);
                 }
+
+                superseded = stop.IsCancellationRequested && !stoppingToken.IsCancellationRequested;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -88,17 +95,73 @@ internal sealed partial class CaptureService(
             finally
             {
                 status.Host = null;
+                await stop.CancelAsync();
+                await watching.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
 
-            // A session that ran for a while was healthy, and whatever ended it deserves a quick retry. One that
-            // keeps failing at once backs off, so a source that is down is not hammered.
-            delay = time.GetUtcNow() - started > Healthy
+            // A session ended because another node was promoted, or one that ran for a while, deserves a quick retry.
+            // One that keeps failing at once backs off, so a source that is down is not hammered.
+            delay = superseded || time.GetUtcNow() - started > Healthy
                 ? TimeSpan.FromMilliseconds(250)
                 : TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, MaxDelay.Ticks));
 
             await Task.Delay(delay, time, stoppingToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
+
+    /// <summary>
+    /// Ends a session as soon as another node of its source answers as primary.
+    /// </summary>
+    /// <remarks>
+    /// A primary that dies with its host sends nothing to say so, and the replication connection only fails when
+    /// something is next written to it and a reply never comes, which can take a minute. A promoted standby, on the
+    /// other hand, says so at once. So the watch asks every node which one is primary, and when it is not the node the
+    /// session is attached to, the session is over: it cannot receive another change from a node that has been
+    /// replaced. Measured on the failover runs, this is the difference between capture resuming after about a second
+    /// and after the next status update happened to hit a dead connection.
+    /// </remarks>
+    private async Task WatchForPromotionAsync(SourceOptions source, SourceCounters status, CancellationTokenSource session)
+    {
+        while (!session.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(WatchInterval, time, session.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (status.Host is not { } attached || source.Hosts.Count < 2)
+            {
+                continue;
+            }
+
+            try
+            {
+                string primary = await SourceConnections.FindPrimaryAsync(source, session.Token);
+
+                if (!string.Equals(primary, attached, StringComparison.Ordinal))
+                {
+                    LogPromotion(_logger, source.Name, attached, primary);
+                    await session.CancelAsync();
+                    return;
+                }
+            }
+            catch (Exception exception) when (exception is SourceUnavailableException or NpgsqlException or TimeoutException)
+            {
+                // No node answers as primary right now, typically mid-promotion. Keep watching.
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Source {Source} has a new primary, {Primary}; ending the session on {Attached}.")]
+    private static partial void LogPromotion(ILogger logger, string source, string attached, string primary);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Capture session for {Source} ended; reconnecting.")]
     private static partial void LogSessionFailed(ILogger logger, Exception exception, string source);

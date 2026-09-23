@@ -66,8 +66,9 @@ public sealed class SourceConnections(IOptions<WalrusOptions> options)
     }
 
     /// <summary>
-    /// The node that is primary now. Asked of each node in turn, because after a failover the configured order
-    /// says nothing about which one it is.
+    /// The node that is primary now. Every node is asked at once and the first to answer as primary wins, because
+    /// after a failover the configured order says nothing about which one it is, and a dead node asked first would
+    /// hold the answer back for a whole connection timeout.
     /// </summary>
     /// <param name="source">The source.</param>
     /// <param name="cancellationToken">Cancels the search.</param>
@@ -75,31 +76,53 @@ public sealed class SourceConnections(IOptions<WalrusOptions> options)
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        using var found = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        List<Task<(string Node, bool Primary, Exception? Failure)>> probes =
+            [.. source.Hosts.Select(node => ProbeAsync(source, node, found.Token))];
+
         Exception? last = null;
 
-        foreach (string node in source.Hosts)
+        while (probes.Count > 0)
         {
-            try
-            {
-                await using var connection = new NpgsqlConnection(ConnectionString(source, node, pooled: false));
-                await connection.OpenAsync(cancellationToken);
-                await using var probe = new NpgsqlCommand("select pg_is_in_recovery()", connection);
+            Task<(string Node, bool Primary, Exception? Failure)> answered = await Task.WhenAny(probes);
+            probes.Remove(answered);
 
-                if (await probe.ExecuteScalarAsync(cancellationToken) is false)
-                {
-                    return node;
-                }
-            }
-            catch (Exception exception) when (exception is NpgsqlException or TimeoutException)
+            (string node, bool primary, Exception? failure) = await answered;
+
+            if (primary)
             {
-                last = exception;
+                // The others are not needed any more; stop waiting on a node that may never answer.
+                await found.CancelAsync();
+                return node;
             }
+
+            last = failure ?? last;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         string tried = string.Join(", ", source.Hosts);
 
         throw last is null
             ? new SourceUnavailableException($"None of {tried} is a primary for source '{source.Name}'.")
             : new SourceUnavailableException($"None of {tried} is a primary for source '{source.Name}'.", last);
+    }
+
+    private static async Task<(string Node, bool Primary, Exception? Failure)> ProbeAsync(
+        SourceOptions source,
+        string node,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = new NpgsqlConnection(ConnectionString(source, node, pooled: false));
+            await connection.OpenAsync(cancellationToken);
+            await using var probe = new NpgsqlCommand("select pg_is_in_recovery()", connection);
+
+            return (node, await probe.ExecuteScalarAsync(cancellationToken) is false, null);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or OperationCanceledException)
+        {
+            return (node, false, exception);
+        }
     }
 }

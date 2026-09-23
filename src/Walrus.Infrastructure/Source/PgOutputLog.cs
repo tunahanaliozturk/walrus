@@ -37,7 +37,13 @@ internal sealed partial class PgOutputLogFactory(
             await catalog.OpenAsync(cancellationToken);
             await EnsureSlotAsync(catalog, options, cancellationToken);
 
-            replication = new LogicalReplicationConnection(connectionString);
+            // Status every second rather than every ten. The flushed position is sent explicitly after each outbox
+            // commit anyway; this is what makes a connection to a node that has gone away fail within a second of it
+            // coming back, instead of whenever the next ten-second update happens to be due.
+            replication = new LogicalReplicationConnection(connectionString)
+            {
+                WalReceiverStatusInterval = TimeSpan.FromSeconds(1),
+            };
             await replication.Open(cancellationToken);
 
             SourceCounters status = counters.Source(source);
