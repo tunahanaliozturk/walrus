@@ -1,0 +1,213 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      failovers:
+        description: Failover cycles for the chaos job
+        default: "50"
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  build:
+    name: build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Walrus.slnx
+
+      - name: Build
+        run: dotnet build Walrus.slnx --configuration Release --no-restore
+
+      # Whitespace and style only. Analyzer-level style is already enforced by EnforceCodeStyleInBuild with
+      # warnings as errors, so the full formatter would build a second workspace for no benefit.
+      - name: Verify formatting
+        run: |
+          dotnet format whitespace Walrus.slnx --verify-no-changes --no-restore
+          dotnet format style Walrus.slnx --verify-no-changes --no-restore
+
+      # Reads the licence of every package in the tree, at every depth, from the restored packages on disk.
+      - name: Audit dependency licences
+        run: dotnet run --project tools/Walrus.LicenseAudit --configuration Release --no-build -- .
+
+      - name: Unit tests
+        run: dotnet run --project tests/Walrus.UnitTests --configuration Release --no-build
+
+  integration:
+    name: integration suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # A real Postgres 18 with logical decoding, a real slot and the real host. The claims under test are what
+      # pgoutput sends and what survives a crash between two lines of code, and a substitute would prove neither.
+      - name: Integration tests
+        run: dotnet run --project tests/Walrus.IntegrationTests --configuration Release
+
+  benchmark-smoke:
+    name: benchmark smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # One dry iteration, only to catch a benchmark that no longer compiles or throws. A shared runner is far
+      # too noisy to back a nanosecond claim; published numbers come from known hardware.
+      - name: Benchmarks compile and run
+        run: dotnet run -c Release --project benchmarks/Walrus.Benchmarks -- --filter "*" --job Dry
+
+  web:
+    name: console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # Vite does not type-check, so this is its own step, and it is where a response schema that no longer
+      # matches the server's OpenAPI document fails.
+      - run: npm run type-check
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - run: npm run budget
+      - run: npm run licences
+
+  contract:
+    name: api contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The server writes its OpenAPI document at build time. A difference from the committed copy means the
+      # API changed without the console's types being regenerated.
+      - name: Regenerate the OpenAPI document
+        run: dotnet build src/Walrus.Api -p:OpenApiGenerateDocuments=true
+
+      - name: The committed document matches the server
+        run: git diff --exit-code web/openapi.json
+
+      - name: The console's types match the document and still compile
+        working-directory: web
+        run: |
+          npm ci
+          npm run contract
+          git diff --exit-code src/api/schema.d.ts
+          npm run type-check
+
+  compose:
+    name: compose, failover and soak
+    runs-on: ubuntu-latest
+    env:
+      READ: "Authorization: Bearer walrus-read-token-for-local-use-only"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # The quick start in the README is a promise. This runs it.
+      - name: Bring the stack up
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: A token is required
+        run: test "$(curl -s -o /dev/null -w '%{http_code}' localhost:5190/v1/stats)" = "401"
+
+      - name: Register the demo sinks and write to both regions
+        run: bash docker/demo.sh
+
+      - name: The replica has both regions' changes, merged, with the email masked
+        run: |
+          for i in $(seq 1 30); do
+            row=$(docker compose exec -T store psql -U postgres -d sink -Atc "select name, city, plan from profiles where id = 7")
+            if [ "$row" = "linus|Portland|team" ]; then break; fi
+            sleep 1
+          done
+          test "$row" = "linus|Portland|team"
+          email=$(docker compose exec -T store psql -U postgres -d sink -Atc "select email from accounts where id = 1")
+          echo "$email" | grep -Eq '^[0-9a-f]{64}$'
+
+      - name: Standby holds a synchronised copy of the capture slot
+        run: |
+          for i in $(seq 1 60); do
+            out=$(curl -sf localhost:5190/v1/stats -H "$READ")
+            if echo "$out" | jq -e '.sources[] | select(.name == "eu") | .standbys[0].synced' > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "$out"; exit 1
+
+      - name: Commit-to-apply lag at 3,000 changes a second for a minute
+        run: dotnet run -c Release --project load/Walrus.Load -- soak --rate 3000 --seconds 60
+
+      - name: Kill the primary under load, repeatedly, and lose nothing
+        run: dotnet run -c Release --project load/Walrus.Load -- failover --cycles ${{ github.event.inputs.failovers || '3' }} --rate 300
+
+      # The console against the same stack, through nginx, which holds the read token.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Console journeys and accessibility
+        working-directory: web
+        env:
+          WALRUS_WEB_URL: http://127.0.0.1:5191
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          (timeout 300 dotnet run -c Release --project ../load/Walrus.Load -- traffic > /dev/null 2>&1 &)
+          npx playwright test
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail 150
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
