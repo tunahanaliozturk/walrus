@@ -35,7 +35,7 @@ internal static class Endpoints
                 letter.Seq,
                 letter.Change.Table,
                 letter.Change.Operation,
-                ToDictionary(letter.Change.Key),
+                Columns(letter.Change.Key),
                 letter.Error,
                 letter.Attempts,
                 letter.DeadAt))]);
@@ -45,7 +45,7 @@ internal static class Endpoints
             string id, string q, string? table, int? limit, IndexSinkRegistry indexes) =>
             indexes.Find(id) is { } index
                 ? TypedResults.Ok(new SearchResponse([.. index.Search(q, table, Math.Clamp(limit ?? 20, 1, 200)).Select(static hit =>
-                    new SearchHit(hit.Table, ToDictionary(hit.Key), ToDictionary(hit.Row)))]))
+                    new SearchHit(hit.Table, Columns(hit.Key), Columns(hit.Row)))]))
                 : TypedResults.NotFound());
 
         read.MapGet("/conflicts", (LiveFeed feed) => TypedResults.Ok(feed.Recent(FeedKind.Conflict)));
@@ -169,8 +169,8 @@ internal static class Endpoints
             ? url.GetLeftPart(UriPartial.Path)
             : sink.Target;
 
-    private static Dictionary<string, string?> ToDictionary(RowImage image) =>
-        image.Columns.ToDictionary(static column => column.Name, static column => column.Value, StringComparer.Ordinal);
+    private static ColumnValue[] Columns(RowImage image) =>
+        [.. image.Columns.Select(static column => new ColumnValue(column.Name, column.Value))];
 
     private static IResult ToResult(SinkOperationResult result) => result.Outcome switch
     {

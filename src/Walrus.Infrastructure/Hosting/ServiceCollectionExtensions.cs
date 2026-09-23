@@ -39,9 +39,14 @@ public static class ServiceCollectionExtensions
 
         IServiceCollection services = builder.Services;
 
-        services.AddOptions<WalrusOptions>()
-            .Bind(builder.Configuration.GetSection(WalrusOptions.Section))
-            .ValidateOnStart();
+        OptionsBuilder<WalrusOptions> options = services.AddOptions<WalrusOptions>()
+            .Bind(builder.Configuration.GetSection(WalrusOptions.Section));
+
+        // Build-time tooling starts the host with no configuration at all, only to read its endpoints.
+        if (!IsBuildTimeTooling)
+        {
+            options.ValidateOnStart();
+        }
 
         services.AddSingleton<IValidateOptions<WalrusOptions>, WalrusOptionsValidator>();
         services.TryAddSingletonTimeProvider();

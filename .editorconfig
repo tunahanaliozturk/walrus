@@ -40,3 +40,8 @@ dotnet_diagnostic.CA2201.severity = none
 # EF Core migrations are generated. They are reviewed, not hand-formatted.
 [src/Walrus.Infrastructure/Store/Migrations/*.cs]
 generated_code = true
+
+# BenchmarkDotNet runs benchmarks as instance methods on a class it constructs, whether or not they touch
+# instance state.
+[benchmarks/**/*.cs]
+dotnet_diagnostic.CA1822.severity = none

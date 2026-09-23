@@ -11,3 +11,7 @@ BenchmarkDotNet.Artifacts/
 docs/
 tests/
 **/*.md
+web/
+load/
+benchmarks/
+tools/

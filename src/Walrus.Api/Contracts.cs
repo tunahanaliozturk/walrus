@@ -128,10 +128,15 @@ public sealed record DeadLetterResponse(
     long Seq,
     string Table,
     ChangeOperation Operation,
-    IReadOnlyDictionary<string, string?> Key,
+    IReadOnlyList<ColumnValue> Key,
     string Error,
     int Attempts,
     DateTimeOffset DeadAt);
+
+/// <summary>One column of a row, in the order the table declares it.</summary>
+/// <param name="Name">The column.</param>
+/// <param name="Value">Its value as Postgres prints it, or null.</param>
+public sealed record ColumnValue(string Name, string? Value);
 
 /// <summary>The result of retrying a sink's parked rows.</summary>
 /// <param name="Resolved">Rows that applied and are flowing again.</param>
@@ -142,7 +147,7 @@ public sealed record RetryResponse(int Resolved, int StillBlocked);
 /// <param name="Table">The table.</param>
 /// <param name="Key">The primary key.</param>
 /// <param name="Row">The row.</param>
-public sealed record SearchHit(string Table, IReadOnlyDictionary<string, string?> Key, IReadOnlyDictionary<string, string?> Row);
+public sealed record SearchHit(string Table, IReadOnlyList<ColumnValue> Key, IReadOnlyList<ColumnValue> Row);
 
 /// <summary>An index sink's search results.</summary>
 /// <param name="Rows">The rows, ordered by table and key.</param>

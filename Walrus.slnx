@@ -9,6 +9,9 @@
     <Project Path="tests/Walrus.UnitTests/Walrus.UnitTests.csproj" />
     <Project Path="tests/Walrus.IntegrationTests/Walrus.IntegrationTests.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Walrus.Benchmarks/Walrus.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/load/">
     <Project Path="load/Walrus.Load/Walrus.Load.csproj" />
   </Folder>
