@@ -7,14 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Walrus.Core/Walrus.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="FsCheck" />
     <PackageReference Include="FsCheck.Xunit.v3" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Walrus.Application\Walrus.Application.csproj" />
+
+    <!-- Referenced so the architecture test can read what each layer really depends on. -->
+    <ProjectReference Include="..\..\src\Walrus.Infrastructure\Walrus.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Walrus.Api\Walrus.Api.csproj" />
   </ItemGroup>
 
 </Project>
