@@ -1,4 +1,4 @@
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>
 /// Stamps changes with a timestamp that is ordered like a clock and never runs backwards.

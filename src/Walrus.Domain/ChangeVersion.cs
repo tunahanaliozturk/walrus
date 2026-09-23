@@ -1,4 +1,4 @@
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>
 /// The total order every sink uses to decide which of two changes to the same row is newer.

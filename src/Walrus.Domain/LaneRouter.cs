@@ -1,4 +1,4 @@
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>Chooses which delivery lane carries changes for a row.</summary>
 /// <remarks>

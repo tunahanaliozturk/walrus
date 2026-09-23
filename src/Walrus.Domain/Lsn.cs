@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>A position in a Postgres write-ahead log.</summary>
 /// <remarks>

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>One column of a captured row, as the text Postgres sent for it.</summary>
 /// <param name="Name">The column name.</param>

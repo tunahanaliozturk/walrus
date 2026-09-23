@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <!--
-    No dependencies at all. Everything that decides what a sink ends up holding lives here as pure
-    functions, so the convergence claims can be tested as properties without a database in sight.
-  -->
-
-</Project>

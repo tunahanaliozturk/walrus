@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>The newest value one column has been given, and by which change.</summary>
 /// <param name="Version">The change that wrote it.</param>
@@ -126,12 +126,12 @@ public sealed class KeyState : IEquatable<KeyState>
     }
 
     /// <summary>The state as JSON, stable enough to compare two states byte for byte.</summary>
-    public string ToJson() => JsonSerializer.Serialize(this, CoreJson.Default.KeyState);
+    public string ToJson() => JsonSerializer.Serialize(this, DomainJson.Default.KeyState);
 
     /// <summary>Reads a state written by <see cref="ToJson"/>.</summary>
     /// <param name="json">The JSON.</param>
     public static KeyState FromJson(string json) =>
-        JsonSerializer.Deserialize(json, CoreJson.Default.KeyState)
+        JsonSerializer.Deserialize(json, DomainJson.Default.KeyState)
         ?? throw new JsonException("A key state cannot be null.");
 
     /// <inheritdoc />
@@ -230,7 +230,7 @@ public sealed class KeyStateJsonConverter : JsonConverter<KeyState>
     /// <inheritdoc />
     public override KeyState Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        KeyStateDocument document = JsonSerializer.Deserialize(ref reader, CoreJson.Default.KeyStateDocument)
+        KeyStateDocument document = JsonSerializer.Deserialize(ref reader, DomainJson.Default.KeyStateDocument)
             ?? throw new JsonException("A key state cannot be null.");
 
         return KeyState.Restore(
@@ -254,7 +254,7 @@ public sealed class KeyStateJsonConverter : JsonConverter<KeyState>
                 value.NewestImage,
                 [.. value.Registers.Select(static pair =>
                     new ColumnRegisterDocument(pair.Key, pair.Value.Version, pair.Value.Value))]),
-            CoreJson.Default.KeyStateDocument);
+            DomainJson.Default.KeyStateDocument);
     }
 }
 
@@ -275,7 +275,7 @@ public sealed record KeyStateDocument(
 /// <param name="Value">The value.</param>
 public sealed record ColumnRegisterDocument(string Column, ChangeVersion Version, string? Value);
 
-/// <summary>Source-generated serialisation for everything Core puts on the wire or on disk.</summary>
+/// <summary>Source-generated serialisation for everything the domain puts on the wire or on disk.</summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
@@ -283,4 +283,4 @@ public sealed record ColumnRegisterDocument(string Column, ChangeVersion Version
 [JsonSerializable(typeof(KeyStateDocument))]
 [JsonSerializable(typeof(ChangeEvent))]
 [JsonSerializable(typeof(RowImage))]
-public sealed partial class CoreJson : JsonSerializerContext;
+public sealed partial class DomainJson : JsonSerializerContext;

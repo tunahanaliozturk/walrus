@@ -1,7 +1,7 @@
 using FsCheck;
 using FsCheck.Fluent;
 using FsCheck.Xunit;
-using Walrus.Core;
+using Walrus.Domain;
 
 namespace Walrus.UnitTests;
 

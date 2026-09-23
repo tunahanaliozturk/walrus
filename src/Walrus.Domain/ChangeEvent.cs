@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Walrus.Core;
+namespace Walrus.Domain;
 
 /// <summary>What a change did to a row.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ChangeOperation>))]

@@ -36,3 +36,7 @@ dotnet_diagnostic.xUnit1051.severity = none
 dotnet_diagnostic.CA5394.severity = none
 dotnet_diagnostic.CA1861.severity = none
 dotnet_diagnostic.CA2201.severity = none
+
+# EF Core migrations are generated. They are reviewed, not hand-formatted.
+[src/Walrus.Infrastructure/Store/Migrations/*.cs]
+generated_code = true
