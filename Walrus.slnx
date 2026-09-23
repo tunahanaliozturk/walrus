@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Walrus.Core/Walrus.Core.csproj" />
+    <Project Path="src/Walrus.Store/Walrus.Store.csproj" />
+    <Project Path="src/Walrus.Capture/Walrus.Capture.csproj" />
+    <Project Path="src/Walrus.Dispatch/Walrus.Dispatch.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Walrus.UnitTests/Walrus.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Walrus.LicenseAudit/Walrus.LicenseAudit.csproj" />
+  </Folder>
+</Solution>

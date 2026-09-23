@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Schema/*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Walrus.Core/Walrus.Core.csproj" />
+  </ItemGroup>
+
+</Project>
