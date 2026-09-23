@@ -1,0 +1,108 @@
+# Every endpoint, in the order you would try them against `docker compose up`.
+# The tokens are the compose file's local-only values.
+
+@api = http://127.0.0.1:5190
+@read = walrus-read-token-for-local-use-only
+@operator = walrus-operator-token-for-local-use-only
+
+### Liveness and readiness. Ready means the store answers; capture reconnecting during a failover does not
+### make the API unready.
+GET {{api}}/health/ready
+
+### Without a token: 401.
+GET {{api}}/v1/stats
+
+### Sources and sinks in one call: where capture is attached, how much log each slot is holding, whether the
+### standby could take over, and each sink's lag.
+GET {{api}}/v1/stats
+Authorization: Bearer {{read}}
+
+### A replica of two tables in the sink database, bootstrapped from a consistent snapshot and then streamed.
+### "target" names a configured connection; the connection string itself never goes through the API.
+POST {{api}}/v1/sinks
+Authorization: Bearer {{operator}}
+Content-Type: application/json
+
+{
+  "id": "replica",
+  "kind": "Postgres",
+  "tables": ["public.accounts", "public.profiles"],
+  "target": "replica",
+  "start": "Snapshot"
+}
+
+### An in-memory search index over the same tables, rebuilt from the outbox on every start.
+POST {{api}}/v1/sinks
+Authorization: Bearer {{operator}}
+Content-Type: application/json
+
+{
+  "id": "search",
+  "kind": "Index",
+  "tables": ["public.accounts", "public.profiles"],
+  "start": "Beginning"
+}
+
+### A webhook. Refused unless the host is in Walrus:WebhookAllowedHosts, which compose leaves empty, so this
+### shows the refusal.
+POST {{api}}/v1/sinks
+Authorization: Bearer {{operator}}
+Content-Type: application/json
+
+{
+  "id": "hook",
+  "kind": "Webhook",
+  "tables": ["public.accounts"],
+  "target": "http://169.254.169.254/latest/meta-data",
+  "start": "Now"
+}
+
+### The read token can look but not change: 401.
+POST {{api}}/v1/sinks
+Authorization: Bearer {{read}}
+Content-Type: application/json
+
+{ "id": "nope", "kind": "Index", "tables": ["public.accounts"], "start": "Now" }
+
+### One sink: its position in each source, and its lag.
+GET {{api}}/v1/sinks/replica
+Authorization: Bearer {{read}}
+
+### Rows in the index containing every word.
+GET {{api}}/v1/sinks/search/search?q=linus
+Authorization: Bearer {{read}}
+
+### Changes a sink refused, with the reason. Empty unless something was refused.
+GET {{api}}/v1/sinks/replica/dead-letters
+Authorization: Bearer {{read}}
+
+### Retry them, oldest first per row, once the sink is fixed.
+POST {{api}}/v1/sinks/replica/dead-letters/retry
+Authorization: Bearer {{operator}}
+
+### Redeliver everything from the start of the outbox. Nothing changes: each row's state recognises every change.
+POST {{api}}/v1/sinks/replica/replay
+Authorization: Bearer {{operator}}
+
+### Empty the sink and rebuild it from a log position.
+POST {{api}}/v1/sinks/replica/replay?fromLsn=0/0&reset=true
+Authorization: Bearer {{operator}}
+
+### Rebuild from a fresh consistent snapshot.
+POST {{api}}/v1/sinks/replica/snapshot
+Authorization: Bearer {{operator}}
+
+### The most recent conflict decisions: which change lost, and to which source's newer write.
+GET {{api}}/v1/conflicts
+Authorization: Bearer {{read}}
+
+### The live feed, as server-sent events. Leave it open and write to a source.
+GET {{api}}/v1/events
+Authorization: Bearer {{read}}
+
+### Remove a sink, with its cursors and dead letters.
+DELETE {{api}}/v1/sinks/search
+Authorization: Bearer {{operator}}
+
+### The OpenAPI document the console's types are generated from.
+GET {{api}}/openapi/v1.json
